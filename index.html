@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8fa">
+  <title>ポモドーロ時刻表</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --text: #182230;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --accent: #2457d6;
+      --accent-soft: #eaf0ff;
+      --rest: #f0fdf4;
+      --rest-text: #166534;
+      --danger: #b42318;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); }
+    main { width: min(100% - 28px, 620px); margin: 28px auto 48px; }
+    h1 { margin: 0; font-size: clamp(1.5rem, 5vw, 1.9rem); letter-spacing: -.03em; }
+    .intro { margin: 8px 0 22px; color: var(--muted); line-height: 1.6; font-size: .95rem; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin-top: 14px; }
+    label, .label { display: block; font-weight: 650; margin-bottom: 8px; font-size: .95rem; }
+    input[type="text"], input[type="time"] {
+      width: 100%; min-height: 48px; padding: 11px 12px; border: 1px solid #cbd5e1;
+      border-radius: 10px; background: white; color: var(--text); font: inherit;
+    }
+    input:focus-visible, button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+    .hint { margin: 7px 0 0; color: var(--muted); font-size: .83rem; line-height: 1.5; }
+    fieldset { border: 0; margin: 18px 0 0; padding: 0; }
+    legend { font-weight: 650; margin-bottom: 10px; }
+    .choices { display: grid; gap: 9px; }
+    .choice {
+      display: flex; gap: 10px; align-items: flex-start; padding: 11px 12px;
+      border: 1px solid var(--line); border-radius: 11px; cursor: pointer; font-weight: 500;
+    }
+    .choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+    .choice input { margin-top: 4px; accent-color: var(--accent); }
+    .custom-time { margin-top: 10px; }
+    .custom-time[hidden] { display: none; }
+    .error { color: var(--danger); font-size: .88rem; margin: 10px 0 0; }
+    .summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .summary-label { color: var(--muted); font-size: .9rem; }
+    .summary-value { font-size: 1.35rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+    .results-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+    .results-heading h2 { font-size: 1.12rem; margin: 0; }
+    .results-heading span { color: var(--muted); font-size: .84rem; }
+    .result-list { display: grid; gap: 9px; }
+    .segment {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px;
+      padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: white;
+    }
+    .segment:last-child { border-color: #bfdbfe; background: #f8faff; }
+    .segment-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+    .segment-number { color: var(--muted); font-size: .82rem; }
+    .segment-duration { font-weight: 650; }
+    .times { margin-top: 5px; color: var(--muted); font-size: .88rem; font-variant-numeric: tabular-nums; }
+    .end-time { text-align: right; font-size: 1.18rem; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .end-caption { display: block; margin-top: 2px; color: var(--muted); font-size: .75rem; font-weight: 500; }
+    .footer-note { color: var(--muted); font-size: .82rem; line-height: 1.55; margin: 14px 2px 0; }
+    @media (min-width: 520px) { .panel { padding: 22px; } .choices { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ポモドーロ時刻表</h1>
+    <p class="intro">勉強・休憩の時間を入力すると、各区間の終了時刻を計算します。タイマーやセット数の記録は不要です。</p>
+
+    <section class="panel" aria-labelledby="input-heading">
+      <label id="input-heading" for="durations">区間の長さ（分）</label>
+      <input id="durations" type="text" inputmode="text" autocomplete="off" spellcheck="false" value="25,5,25,5,25,15" aria-describedby="duration-hint">
+      <p class="hint" id="duration-hint">カンマ区切りで入力します。例：25,5,25,5,25,15</p>
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <fieldset>
+        <legend>開始時刻</legend>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="start-mode" value="now">
+            <span>今の時刻から開始</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="start-mode" value="round" checked>
+            <span>現在時刻の次の5分区切りから開始</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="start-mode" value="custom">
+            <span>指定した時刻から開始</span>
+          </label>
+        </div>
+        <div class="custom-time" id="custom-time" hidden>
+          <label for="custom-start">開始時刻</label>
+          <input id="custom-start" type="time" value="09:00">
+        </div>
+      </fieldset>
+    </section>
+
+    <section class="panel" aria-live="polite" aria-labelledby="results-title">
+      <div class="summary">
+        <div>
+          <div class="summary-label">開始時刻</div>
+          <div class="summary-value" id="start-display">--:--</div>
+        </div>
+        <div style="text-align:right">
+          <div class="summary-label">合計時間</div>
+          <div class="summary-value" id="total-display">--分</div>
+        </div>
+      </div>
+      <div style="height:1px;background:var(--line);margin:17px 0"></div>
+      <div class="results-heading">
+        <h2 id="results-title">区切り時刻</h2>
+        <span id="count-display">0区間</span>
+      </div>
+      <div id="result-list" class="result-list"></div>
+      <p class="footer-note">「次の5分区切り」は、現在時刻がちょうど5分単位ならその時刻を使います。開始時刻はページを開いた時点ではなく、選択を切り替えたり入力を変更したりした時点の現在時刻を基準に更新します。</p>
+    </section>
+  </main>
+
+  <script>
+    const durationsInput = document.getElementById('durations');
+    const customStartInput = document.getElementById('custom-start');
+    const customTimeBox = document.getElementById('custom-time');
+    const errorBox = document.getElementById('error');
+    const startDisplay = document.getElementById('start-display');
+    const totalDisplay = document.getElementById('total-display');
+    const countDisplay = document.getElementById('count-display');
+    const resultList = document.getElementById('result-list');
+    const modeInputs = [...document.querySelectorAll('input[name="start-mode"]')];
+
+    function selectedMode() {
+      return modeInputs.find(input => input.checked)?.value ?? 'round';
+    }
+
+    function formatTime(totalMinutes) {
+      const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+      const hours = Math.floor(normalized / 60);
+      const minutes = normalized % 60;
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+
+    function currentMinutes() {
+      const now = new Date();
+      return now.getHours() * 60 + now.getMinutes();
+    }
+
+    function getStartMinutes() {
+      const mode = selectedMode();
+      if (mode === 'custom') {
+        if (!customStartInput.value) return null;
+        const [hours, minutes] = customStartInput.value.split(':').map(Number);
+        return hours * 60 + minutes;
+      }
+      const current = currentMinutes();
+      if (mode === 'now') return current;
+      return Math.ceil(current / 5) * 5;
+    }
+
+    function parseDurations() {
+      const raw = durationsInput.value.trim();
+      if (!raw) return { error: '区間の長さを入力してください。' };
+      const parts = raw.split(',');
+      const values = [];
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed) return { error: 'カンマの間に数字を入力してください。' };
+        if (!/^\d+$/.test(trimmed)) return { error: '各区間は、1以上の整数で入力してください（例：25,5,25）。' };
+        const value = Number(trimmed);
+        if (!Number.isSafeInteger(value) || value < 1 || value > 1440) {
+          return { error: '各区間は1〜1440分で入力してください。' };
+        }
+        values.push(value);
+      }
+      if (values.length > 100) return { error: '区間は100個以内にしてください。' };
+      return { values };
+    }
+
+    function update() {
+      const parsed = parseDurations();
+      const start = getStartMinutes();
+      customTimeBox.hidden = selectedMode() !== 'custom';
+      errorBox.hidden = true;
+      resultList.replaceChildren();
+
+      if (parsed.error || start === null) {
+        errorBox.textContent = parsed.error || '開始時刻を指定してください。';
+        errorBox.hidden = false;
+        startDisplay.textContent = '--:--';
+        totalDisplay.textContent = '--分';
+        countDisplay.textContent = '0区間';
+        return;
+      }
+
+      const values = parsed.values;
+      const total = values.reduce((sum, value) => sum + value, 0);
+      startDisplay.textContent = formatTime(start);
+      totalDisplay.textContent = `${total}分`;
+      countDisplay.textContent = `${values.length}区間`;
+
+      let cursor = start;
+      values.forEach((duration, index) => {
+        const begin = cursor;
+        cursor += duration;
+
+        const card = document.createElement('div');
+        card.className = 'segment';
+
+        const left = document.createElement('div');
+        const top = document.createElement('div');
+        top.className = 'segment-top';
+
+        const number = document.createElement('span');
+        number.className = 'segment-number';
+        number.textContent = `${index + 1}区間目`;
+
+        const length = document.createElement('span');
+        length.className = 'segment-duration';
+        length.textContent = `${duration}分`;
+
+        const times = document.createElement('div');
+        times.className = 'times';
+        times.textContent = `${formatTime(begin)} → ${formatTime(cursor)}`;
+
+        top.append(number, length);
+        left.append(top, times);
+
+        const right = document.createElement('div');
+        right.className = 'end-time';
+        right.append(document.createTextNode(formatTime(cursor)));
+
+        const caption = document.createElement('span');
+        caption.className = 'end-caption';
+        caption.textContent = index === values.length - 1 ? '終了' : '区切り';
+        right.append(caption);
+
+        card.append(left, right);
+        resultList.append(card);
+      });
+    }
+
+    durationsInput.addEventListener('input', update);
+    customStartInput.addEventListener('input', update);
+    modeInputs.forEach(input => input.addEventListener('change', update));
+    update();
+  </script>
+</body>
+</html>
